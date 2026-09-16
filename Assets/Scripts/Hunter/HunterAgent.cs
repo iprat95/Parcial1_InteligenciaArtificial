@@ -19,7 +19,6 @@ public class HunterAgent : Agent, IHunterContext
 
     [Header("Percepción")]
     [SerializeField] private float visionRadius = 10f;
-    [SerializeField] private LayerMask boidLayer;
 
     [Header("TBA y Daño")]
     [SerializeField] private float tba = 2.5f;
@@ -56,8 +55,9 @@ public class HunterAgent : Agent, IHunterContext
     public string LastAction { get; private set; } = "-";
     public int DetectedBoidsCount { get; private set; }
 
+    public static readonly List<HunterAgent> Active = new List<HunterAgent>();
+
     private StateMachine _stateMachine;
-    private static readonly Collider[] Hits = new Collider[32];
 
     private void Awake()
     {
@@ -73,6 +73,9 @@ public class HunterAgent : Agent, IHunterContext
 
         _stateMachine.ChangeState(HunterStates.Patrol);
     }
+
+    private void OnEnable() => Active.Add(this);
+    private void OnDisable() => Active.Remove(this);
 
     private void Update()
     {
@@ -98,14 +101,15 @@ public class HunterAgent : Agent, IHunterContext
         aliveOut.Clear();
         eliminatedOut.Clear();
 
-        int count = Physics.OverlapSphereNonAlloc(transform.position, visionRadius, Hits, boidLayer);
-        for (int i = 0; i < count; i++)
+        foreach (var boid in BoidAgent.Active)
         {
-            var boid = Hits[i].GetComponentInParent<BoidAgent>();
             if (boid == null) continue;
 
-            if (boid.IsEliminated) eliminatedOut.Add(boid);
-            else aliveOut.Add(boid);
+            float dist = Vector3.Distance(transform.position, boid.transform.position);
+            if (dist > visionRadius) continue;
+
+            if (boid.IsAvailableToGather) eliminatedOut.Add(boid);
+            else if (!boid.IsEliminated) aliveOut.Add(boid);
         }
 
         DetectedBoidsCount = aliveOut.Count + eliminatedOut.Count;

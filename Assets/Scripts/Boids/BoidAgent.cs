@@ -2,10 +2,9 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-[RequireComponent(typeof(Collider))]
 public class BoidAgent : Agent
 {
-    private enum BoidState { Flocking, SeekingPoi, Harvesting, Evading, Eliminated }
+    private enum BoidState { Flocking, SeekingPoi, Harvesting, Evading, Eliminated, Collected }
 
     [Header("Movimiento")]
     [SerializeField] private float maxSpeed = 4f;
@@ -26,14 +25,11 @@ public class BoidAgent : Agent
     [Header("Arrive")]
     [SerializeField] private float poiDetectionRadius = 15f;
     [SerializeField] private float arriveSlowingDistance = 3f;
+    [SerializeField] private float trapmateSeparationRadius = 0.6f;
 
     [Header("Vida")]
     [SerializeField] private float maxHealth = 30f;
     [SerializeField] private float respawnDelay = 5f;
-
-    [Header("Layers usadas como sensores")]
-    [SerializeField] private LayerMask boidLayer;
-    [SerializeField] private LayerMask hunterLayer;
 
     [Header("Feedback visual")]
     [SerializeField] private bool colorFeedback = true;
@@ -42,8 +38,11 @@ public class BoidAgent : Agent
     [SerializeField] private Color harvestingColor = Color.green;
     [SerializeField] private Color eliminatedColor = Color.gray;
 
-    public bool IsEliminated => _state == BoidState.Eliminated;
+    public bool IsEliminated => _state == BoidState.Eliminated || _state == BoidState.Collected;
+    public bool IsAvailableToGather => _state == BoidState.Eliminated;
     public string DebugState => _state.ToString();
+
+    public static readonly List<BoidAgent> Active = new List<BoidAgent>();
 
     private float _currentHealth;
     private BoidState _state = BoidState.Flocking;
@@ -56,7 +55,6 @@ public class BoidAgent : Agent
     private MaterialPropertyBlock _mpb;
     private Coroutine _respawnRoutine;
 
-    private static readonly Collider[] Hits = new Collider[32];
     private static readonly int ColorId = Shader.PropertyToID("_BaseColor");
     private static readonly int ColorIdLegacy = Shader.PropertyToID("_Color");
 
@@ -71,9 +69,12 @@ public class BoidAgent : Agent
         _velocity = randomDir * maxSpeed * 0.5f;
     }
 
+    private void OnEnable() => Active.Add(this);
+    private void OnDisable() => Active.Remove(this);
+
     private void Update()
     {
-        if (_state == BoidState.Eliminated)
+        if (IsEliminated)
         {
             _velocity = Vector3.zero;
             UpdateColorFeedback();
@@ -148,29 +149,37 @@ public class BoidAgent : Agent
             _targetPoi = null;
         }
     }
-    
+
     private void DetectHunter()
     {
         _hunterThreat = null;
-        int count = Physics.OverlapSphereNonAlloc(transform.position, hunterVisionRadius, Hits, hunterLayer);
-        if (count > 0)
+        _hunterVelocity = Vector3.zero;
+
+        float closestDist = hunterVisionRadius;
+
+        foreach (var hunter in HunterAgent.Active)
         {
-            _hunterThreat = Hits[0].transform;
-            
-            var velocityProvider = Hits[0].GetComponentInParent<IVelocityProvider>();
-            _hunterVelocity = velocityProvider != null ? velocityProvider.Velocity : Vector3.zero;
+            if (hunter == null) continue;
+
+            float dist = Vector3.Distance(transform.position, hunter.transform.position);
+            if (dist <= closestDist)
+            {
+                closestDist = dist;
+                _hunterThreat = hunter.transform;
+                _hunterVelocity = hunter.Velocity;
+            }
         }
     }
+
+    private bool InRange(Vector3 pos, float radius) => (pos - transform.position).sqrMagnitude <= radius * radius;
 
     private List<BoidAgent> SenseNeighbors(float radius)
     {
         var list = new List<BoidAgent>();
-        int count = Physics.OverlapSphereNonAlloc(transform.position, radius, Hits, boidLayer);
-        for (int i = 0; i < count; i++)
+        foreach (var other in Active)
         {
-            var other = Hits[i].GetComponentInParent<BoidAgent>();
             if (other == null || other == this || other.IsEliminated) continue;
-            list.Add(other);
+            if (InRange(other.transform.position, radius)) list.Add(other);
         }
         return list;
     }
@@ -191,6 +200,31 @@ public class BoidAgent : Agent
         Vector3 desired = Vector3.zero;
         foreach (var n in neighbors) desired += transform.position - n.transform.position;
         desired /= neighbors.Count;
+
+        return CalculateSteering(desired.normalized * maxSpeed);
+    }
+
+    private Vector3 CalculateSeparationWhileSeekingPoi()
+    {
+        var neighbors = SenseNeighbors(separationRadius);
+        if (neighbors.Count == 0) return Vector3.zero;
+
+        Vector3 desired = Vector3.zero;
+        int count = 0;
+
+        foreach (var n in neighbors)
+        {
+            bool sameTrap = _targetPoi != null && n._targetPoi == _targetPoi;
+            float radius = sameTrap ? trapmateSeparationRadius : separationRadius;
+
+            if (Vector3.Distance(transform.position, n.transform.position) > radius) continue;
+
+            desired += transform.position - n.transform.position;
+            count++;
+        }
+
+        if (count == 0) return Vector3.zero;
+        desired /= count;
 
         return CalculateSteering(desired.normalized * maxSpeed);
     }
@@ -237,7 +271,7 @@ public class BoidAgent : Agent
     {
         if (_targetPoi == null) return Vector3.zero;
 
-        return Arrive(_targetPoi.transform.position, _targetPoi.InteractionRadius) + CalculateSeparation() * 0.3f;
+        return Arrive(_targetPoi.transform.position, _targetPoi.InteractionRadius) + CalculateSeparationWhileSeekingPoi() * 0.3f;
     }
 
     private Vector3 Seek(Vector3 target)
@@ -267,7 +301,7 @@ public class BoidAgent : Agent
 
     public void TakeDamage(float amount)
     {
-        if (_state == BoidState.Eliminated) return;
+        if (IsEliminated) return;
 
         _currentHealth -= amount;
         if (_currentHealth <= 0f)
@@ -281,6 +315,8 @@ public class BoidAgent : Agent
 
     public void OnGathered()
     {
+        _state = BoidState.Collected;
+
         if (_respawnRoutine != null) StopCoroutine(_respawnRoutine);
         _respawnRoutine = StartCoroutine(RespawnRoutine());
     }
@@ -314,7 +350,7 @@ public class BoidAgent : Agent
         Color c;
         if (_state == BoidState.Evading) c = evadingColor;
         else if (_state == BoidState.Harvesting) c = harvestingColor;
-        else if (_state == BoidState.Eliminated) c = eliminatedColor;
+        else if (IsEliminated) c = eliminatedColor;
         else c = flockingColor;
 
         foreach (var r in _renderers)

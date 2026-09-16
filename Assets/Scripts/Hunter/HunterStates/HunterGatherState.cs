@@ -20,7 +20,7 @@ public class HunterGatherState : State
     {
         var target = _agent.CurrentTarget;
 
-        if (target == null || !target.IsEliminated)
+        if (target == null || !target.IsAvailableToGather)
         {
             StateMachine.ChangeState(HunterStates.Patrol);
             return;
