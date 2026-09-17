@@ -128,5 +128,5 @@ MonoBehaviour:
   health: 30
   drainPerTick: 6
   drainInterval: 2
-  interactionRadius: 1.2
+  interactionRadius: 2
   maxSimultaneousHarvesters: 1

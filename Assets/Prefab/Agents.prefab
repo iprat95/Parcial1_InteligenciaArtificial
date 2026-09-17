@@ -128,7 +128,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b3041e690965a7e4197eb5a65dacee8f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BoidAgent
-  maxSpeed: 4
+  maxSpeed: 5
   maxSteering: 8
   separationRadius: 1.5
   alignmentRadius: 4

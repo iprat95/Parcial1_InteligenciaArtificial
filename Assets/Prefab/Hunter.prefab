@@ -131,7 +131,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::HunterAgent
   moveSpeed: 5
   rotationSpeed: 8
-  slowingDistance: 0
   waypoints: []
   waypointArriveDistance: 0.5
   pointOfInterestPrefab: {fileID: 5033455311706686151, guid: 85e025ca160c13242bb05d0093a1c597, type: 3}
@@ -140,7 +139,7 @@ MonoBehaviour:
   trapPlacementDuration: 1.5
   visionRadius: 10
   tba: 2.5
-  rangeAttackRadius: 6
+  rangeAttackRadius: 7
   meleeAttackRadius: 3
   meleeDamage: 34
   rangeDamage: 20

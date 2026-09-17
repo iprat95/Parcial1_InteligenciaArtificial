@@ -25,6 +25,7 @@ public class BoidAgent : Agent
     [Header("Arrive")]
     [SerializeField] private float poiDetectionRadius = 15f;
     [SerializeField] private float arriveSlowingDistance = 3f;
+    [SerializeField, Range(0f, 1f)] private float arriveMinSpeedFactor = 0.35f;
     [SerializeField] private float trapmateSeparationRadius = 0.6f;
 
     [Header("Vida")]
@@ -88,7 +89,11 @@ public class BoidAgent : Agent
         {
             _velocity = Vector3.zero;
             _targetPoi?.Harvest(this, Time.deltaTime);
-            if (_targetPoi == null) _state = BoidState.Flocking;
+            if (_targetPoi == null)
+            {
+                _state = BoidState.Flocking;
+                _velocity = new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)).normalized * maxSpeed * 0.5f;
+            }
         }
         else
         {
@@ -287,7 +292,8 @@ public class BoidAgent : Agent
 
         if (distance <= minDistance) return Vector3.zero;
 
-        float targetSpeed = maxSpeed * Mathf.Clamp01((distance - minDistance) / arriveSlowingDistance);
+        float t = Mathf.Clamp01((distance - minDistance) / arriveSlowingDistance);
+        float targetSpeed = maxSpeed * Mathf.Max(t, arriveMinSpeedFactor);
         Vector3 desired = direction.normalized * targetSpeed;
 
         return CalculateSteering(desired);
